@@ -40,7 +40,7 @@ def get_cifar10(args, root):
         root, train_labeled_idxs, train=True,
         transform=transform_labeled)
 
-    train_unlabeled_dataset = CIFAR10SSL(
+    train_unlabeled_dataset = CIFAR10SSL_up(
         root, train_unlabeled_idxs, train=True,
         transform=TransformFixMatch(mean=cifar10_mean, std=cifar10_std))
 
@@ -48,6 +48,34 @@ def get_cifar10(args, root):
         root, train=False, transform=transform_val, download=False)
 
     return train_labeled_dataset, train_unlabeled_dataset, test_dataset
+
+
+def get_cifar10_weak(args, root):
+    base_dataset = datasets.CIFAR10(root, train=True, download=True)
+
+    _, train_unlabeled_idxs = x_u_split(
+        args, base_dataset.targets)
+
+    train_unlabeled_dataset = CIFAR10SSL_weak(
+        root, train_unlabeled_idxs, train=True,
+        transform=TransformFixMatch())
+
+    return train_unlabeled_dataset
+
+
+def get_cifar10_strong(args, root):
+    base_dataset = datasets.CIFAR10(root, train=True, download=True)
+
+    train_labeled_idxs, train_unlabeled_idxs = x_u_split(
+        args, base_dataset.targets)
+
+    train_unlabeled_dataset = CIFAR10SSL_strong(
+        root, train_unlabeled_idxs, train=True,
+        transform=TransformFixMatch(mean=cifar10_mean, std=cifar10_std))
+
+    return train_unlabeled_dataset
+
+
 
 
 def get_cifar100(args, root):
@@ -130,6 +158,29 @@ class TransformFixMatch(object):
         strong = self.strong(x)
         return self.normalize(weak), self.normalize(strong)
 
+class TransformFixMatch_fn(object):
+    def __init__(self, mean, std):
+        self.weak = transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(size=32,
+                                  padding=int(32*0.125),
+                                  padding_mode='reflect')])
+        self.strong = transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(size=32,
+                                  padding=int(32*0.125),
+                                  padding_mode='reflect'),
+            RandAugmentMC(n=2, m=10)])
+        self.normalize = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean, std=std)])
+
+    def __call__(self, x):
+        x = transforms.ToPILImage()(x)
+        weak = self.weak(x)
+        strong = self.strong(x)
+        return self.normalize(weak), self.normalize(strong)
+
 
 class CIFAR10SSL(datasets.CIFAR10):
     def __init__(self, root, indexs, train=True,
@@ -154,6 +205,87 @@ class CIFAR10SSL(datasets.CIFAR10):
             target = self.target_transform(target)
 
         return img, target
+
+
+
+class CIFAR10SSL_up(datasets.CIFAR10):
+    def __init__(self, root, indexs, train=True,
+                 transform=None, target_transform=None,
+                 download=False):
+        super().__init__(root, train=train,
+                         transform=transform,
+                         target_transform=target_transform,
+                         download=download)
+        if indexs is not None:
+            self.data = self.data[indexs]
+            self.targets = np.array(self.targets)[indexs]
+
+    def __getitem__(self, index):
+        img, target = self.data[index], self.targets[index]
+        img = Image.fromarray(img)
+
+        if self.transform is not None:
+            img_trans = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+
+        img = transforms.ToTensor()(img)
+        return img, img_trans, target
+
+
+
+class CIFAR10SSL_weak(datasets.CIFAR10):
+    def __init__(self, root, indexs, train=True,
+                 transform=None, target_transform=None,
+                 download=False):
+        super().__init__(root, train=train,
+                         transform=transform,
+                         target_transform=target_transform,
+                         download=download)
+        if indexs is not None:
+            self.data = self.data[indexs]
+            self.targets = np.array(self.targets)[indexs]
+
+    def __getitem__(self, index):
+        img, target = self.data[index], self.targets[index]
+        img = Image.fromarray(img)
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img[0], target
+
+
+class CIFAR10SSL_strong(datasets.CIFAR10):
+    def __init__(self, root, indexs, train=True,
+                 transform=None, target_transform=None,
+                 download=False):
+        super().__init__(root, train=train,
+                         transform=transform,
+                         target_transform=target_transform,
+                         download=download)
+        if indexs is not None:
+            self.data = self.data[indexs]
+            self.targets = np.array(self.targets)[indexs]
+
+    def __getitem__(self, index):
+        img, target = self.data[index], self.targets[index]
+        img = Image.fromarray(img)
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img[1], target
+
+
 
 
 class CIFAR100SSL(datasets.CIFAR100):
